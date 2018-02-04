@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import time
 import json
 import re
-from .forumsObjects import *
+from .forums_objects import *
 
 FxpEvents = EventEmitter(wildcards=True)
 
@@ -93,11 +93,11 @@ class fxpLive():
 
 			FxpEvents.emit('newthread', FxpThread(
 				username=data['username'],
-				userid=data['poster'],
+				user_id=data['poster'],
 				id=data['id'],
 				title=data['title'],
 				content=content,
-				commentid=commentid,
+				comment_id=commentid,
 				prefix=data['prefix']
 			))
 
@@ -159,12 +159,12 @@ class fxpLive():
 
 			FxpEvents.emit('newcomment', FxpComment(
 				username=username,
-				userid=userid,
+				user_id=userid,
 				content=content,
-				threadid=int(data['id']),
-				threadtitle=data['title'],
-				commentid=int(msgid),
-				postsnumber=int(data['posts'])
+				thread_id=int(data['id']),
+				thread_title=data['title'],
+				comment_id=int(msgid),
+				posts_number=int(data['posts'])
 			))
 			'''
 			postData = {

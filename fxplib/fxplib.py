@@ -11,7 +11,7 @@ import random
 
 from .fxplive import *
 from .helpers import *  
-from .forumsObjects import *
+from .forums_objects import *
 
 def fxpRegister(username, password, email):
 	md5password = hashlib.md5(password.encode('utf-8')).hexdigest()
