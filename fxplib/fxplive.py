@@ -1,6 +1,6 @@
 from __future__ import print_function #Fix lambda print
 from pymitter import EventEmitter
-from .socketioclient import SocketIO_cli
+from .socketioclient import SocketIOCli
 import requests
 from bs4 import BeautifulSoup
 import time
@@ -24,7 +24,7 @@ class fxpLive():
 			if self.user.liveupdatetoken == None: 
 				print ('[*] Please login before you try to init live connection')
 				return False
-			self.socketIO = SocketIO_cli('https://socket5.fxp.co.il')
+			self.socketIO = SocketIOCli('https://socket5.fxp.co.il')
 			self.socketIO.on_connect = print ('[*] Connected')
 			
 			#login to the live events system

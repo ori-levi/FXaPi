@@ -1,19 +1,6 @@
-# fxplib.py: 7
-# fxplive.py: 5
-bs4 == 0.0.1
-
-# fxplive.py: 2
-pymitter == 0.2.3
-
-# fxplib.py: 4
-# fxplive.py: 4
-requests == 2.18.4
-
-# fxplib.py: 8
-requests_toolbelt == 0.7.1
-
-# socketioclient.py: 13
-six == 1.11.0
-
-# socketioclient.py: 7
-websocket_client == 0.44.0
+bs4
+six
+pymitter
+requests
+websocket_client
+requests_toolbelt
