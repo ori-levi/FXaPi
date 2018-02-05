@@ -1,12 +1,9 @@
-from __future__ import print_function  # Fix lambda print
-
-import json
 import re
+import json
 
 from bs4 import BeautifulSoup
-from pymitter import EventEmitter
-
 from .forums_objects import *
+from pymitter import EventEmitter
 from .socketioclient import SocketIOCli
 
 fxp_events = EventEmitter(wildcards=True)

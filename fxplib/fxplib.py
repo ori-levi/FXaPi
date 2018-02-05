@@ -5,13 +5,18 @@ import random
 import hashlib
 import os.path
 
+from .user import User
 from .helpers import *
-from .fxplive import *
+from .fxp_live import *
 from .forums_objects import *
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+from .constants import *
+
+COMMENT_ID_RE = re.compile('<newpostid>(.*?)</newpostid>')
 
 
 def fxp_register(username, password, email):
+    # TODO: check this function
     md5password = hashlib.md5(password.encode('utf-8')).hexdigest()
 
     data = dict(
@@ -39,162 +44,123 @@ def fxp_register(username, password, email):
 
 
 class Fxp(object):
-    def __init__(self, username, password):
+    def __init__(self, username, password, is_live_connection=True):
         super(Fxp, self).__init__()
 
-        self.logged_in = False
-        self.sess = requests.Session()
-        self.username = username
-        self.md5password = hashlib.md5(password.encode('utf-8')).hexdigest()
-        self.security_token = 'guest'
-        self.user_id = None
-        self.live_update_token = None  # For Socket.io connection
-        self.sess.headers.update({
+        self.user = User(username, password)
+        self.live_fxp = FxpLive(self.user) if is_live_connection else None
+
+        self.session = requests.Session()
+        self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb'
                           'Kit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132'
                           ' Safari/537.36'
         })
-        self.live_fxp = FxpLive(self)
-        self._lastComment = None
 
-    # [Middleware] Is user logged in?
-    def __getattribute__(self, attr):
-        import types
-        method = object.__getattribute__(self, attr)
-        if type(method) == types.MethodType:
-            # See me - Allow login function
-            if not self.logged_in and attr != 'login':
-                print('[*] Please login to use "%s" function' % attr)
-                return lambda *args: None
-            else:
-                return method
-        else:
-            return method
-
-    # Login with user data
     def login(self):
-        if not self.logged_in:
-            login_req = self.sess.post(
-                'https://www.fxp.co.il/login.php?do=login', data={
-                    'do': 'login',
-                    'vb_login_md5password': self.md5password,
-                    'vb_login_md5password_utf': self.md5password,
-                    's': None,
-                    'securitytoken': self.security_token,
-                    'url': 'https://www.fxp.co.il/index.php',
-                    'vb_login_username': self.username,
-                    'vb_login_password': None,
-                    'cookieuser': 1
-                })
-            if 'USER_ID_FXP' in login_req.text:
-                home_req = self.sess.get('https://www.fxp.co.il')
-                if 'הושעת' in home_req.text:
-                    return False
-                self.security_token = re.search('SECURITYTOKEN = "(.+?)";',
-                                                home_req.text).group(1)
-                self.user_id = login_req.cookies.get_dict()['bb_userid']
-                self.live_update_token = self.sess.cookies.get_dict()[
-                    'bb_livefxpext']
-                self.logged_in = True
-                return True
-            else:
-                return False
-        else:
-            return True
+        return self.user.login(self.session)
 
-    # user.createThread(TITLE, CONTENT, FORUM_ID)
-    def create_thread(self, title, content, froum_id, prefix=''):
-        # if prefix == '': fxpData.prefixIds[froumid][prefix]
-        r = self.sess.post(
-            'https://www.fxp.co.il/newthread.php?do=newthread&f=%s' % froum_id,
-            data={
-                'prefixid': prefix,
-                'subject': title,
-                'message_backup': '',
-                'message': content,
-                'wysiwyg': 1,
-                's': None,
-                'securitytoken': self.security_token,
-                'f': int(froum_id),
-                'do': 'postthread',
-                'posthash': '',
-                'poststarttime': '',
-                'loggedinuser': self.user_id,
-                'sbutton': 'צור אשכול חדש',
-                'signature': 1,
-                'parseurl': 1
-            })
-        if 'https://www.fxp.co.il/newthread.php?' in r.url:
-            return False
-        else:
-            n_re = re.search('t=(.*?)&p=(.*?)#post', r.url)
-            return {'eshkolid': n_re.group(1), 'postid': n_re.group(2),
-                    'url': r.url}
+    def create_thread(self, title, content, forum_id, prefix=''):
+        """
+        :type title: str
+        :type content: str
+        :type forum_id: int
+        :type prefix: str
+        :rtype: dict|None
+        """
+        thread_params = dict(
+            prefixid=prefix,
+            subject=title,
+            message_backup='',
+            message=content,
+            wysiwyg=1,
+            s=None,
+            securitytoken=self.security_token,
+            f=forum_id,
+            do='postthread',
+            posthash='',
+            poststarttime='',
+            loggedinuser=self.user_id,
+            sbutton='צור אשכול חדש',
+            signature=1,
+            parseurl=1
+        )
+
+        url = NEW_THREAD_URL.format.format(forum_id)
+        response = self.session.post(url, thread_params)
+
+        if 'https://www.fxp.co.il/newthread.php?' in response.url:
+            return None
+
+        n_re = re.search('t=(.*?)&p=(.*?)#post', response.url)
+        return dict(
+            eshkolid=n_re.group(1),
+            postid=n_re.group(2),
+            url=response.url
+        )
 
     def comment(self, thread_id, content):
-        if hasattr(self, '_lastComment'):
-            if self._lastComment == content:
-                return False
-            self._lastComment = content
-        else:
-            self._lastComment = None
+        comment_params = dict(
+            securitytoken=self.security_token,
+            ajax='1',
+            message_backup=content,
+            message=content,
+            wysiwyg='1',
+            signature='1',
+            fromquickreply='1',
+            s='',
+            do='postreply',
+            t=int(thread_id),
+            p='who cares',
+            specifiedpost=1,
+            parseurl=1,
+            loggedinuser=self.user_id,
+            poststarttime=int(time.time())
+        )
 
-        r = self.sess.post(
-            'https://www.fxp.co.il/newreply.php?do=postreply&t=%s' % str(
-                thread_id), data={
-                'securitytoken': self.security_token,
-                'ajax': '1',
-                'message_backup': content,
-                'message': content,
-                'wysiwyg': '1',
-                'signature': '1',
-                'fromquickreply': '1',
-                's': '',
-                'do': 'postreply',
-                't': int(thread_id),
-                'p': 'who cares',
-                'specifiedpost': 1,
-                'parseurl': 1,
-                'loggedinuser': self.user_id,
-                'poststarttime': int(time.time())
-            })
-        if 'newreply' in r.text:
-            return re.search('<newpostid>(.*?)</newpostid>', r.text).group(1)
-        else:
-            return False
+        url = COMMENT_URL.format(thread_id)
+        response = self.session.post(url, comment_params)
 
-    # TODO: Add to repo option list
-    def reply(self, reply_to_comment, content, spam_prevention=False):
+        if 'newreply' in response.text:
+            return COMMENT_ID_RE.search(response.text).group(1)
+        return None
+
+    def reply(self, reply_to_comment, content, spam_prevention=True):
+        # TODO: Add to repo option list
+
         if spam_prevention:
-            content += ' [COLOR=#fafafa]%s[/COLOR]' % str(
-                '{:03}'.format(random.randrange(1, 10 ** 4)))  # Spam prevention
-
-        if type(reply_to_comment) == FxpComment:
-            new_comment_id = self.comment(
-                reply_to_comment.threadid,
-                '[QUOTE=%s;%s]%s[/QUOTE]%s' % (
-                    reply_to_comment.username, reply_to_comment.id,
-                    reply_to_comment.content, content)
+            content += ' [COLOR=#fafafa]{:03}[/COLOR]'.format(
+                random.randrange(1, 10 ** 4)
             )
-        elif type(reply_to_comment) == FxpThread:
-            new_comment_id = self.comment(
+
+        if isinstance(reply_to_comment, FxpComment):
+            content = '[QUOTE={};{}]{}[/QUOTE]{}'.format(
+                reply_to_comment.username,
                 reply_to_comment.id,
-                '[QUOTE=%s;%s]%s[/QUOTE]%s' % (
-                    reply_to_comment.username, reply_to_comment.commentid,
-                    reply_to_comment.content, content)
+                reply_to_comment.content,
+                content
             )
+            new_comment_id = self.comment(reply_to_comment.thread_id, content)
+
+        elif isinstance(reply_to_comment, FxpThread):
+            content = '[QUOTE={};{}]{}[/QUOTE]{}'.format(
+                reply_to_comment.username,
+                reply_to_comment.comment_id,
+                reply_to_comment.content,
+                content
+            )
+            new_comment_id = self.comment(reply_to_comment.id, content)
         else:
             return False
 
-        if new_comment_id:
-            return new_comment_id
-        else:
-            return False
+        return new_comment_id
+
+    # ######################################################################
 
     def edit_comment(self, comment_id, message, add=False):
         url = 'https://www.fxp.co.il/ajax.php?do=quickedit&p={}'\
             .format(comment_id)
-        r = self.sess.post(
+        r = self.session.post(
             url,
             data={
                 'securitytoken': self.security_token,
@@ -211,7 +177,7 @@ class Fxp(object):
         if add:
             message = '%s\n%s' % (old_comment, message)
 
-        r = self.sess.post(
+        r = self.session.post(
             'https://www.fxp.co.il/editpost.php?do=updatepost&postid=%s' % str(
                 comment_id), data={
                 'securitytoken': self.security_token,
@@ -224,19 +190,19 @@ class Fxp(object):
         return '<postbit><![CDATA[' in r.text
 
     def like(self, msg_id):
-        self.sess.post('https://www.fxp.co.il/ajax.php', data={
+        self.session.post('https://www.fxp.co.il/ajax.php', data={
             'do': 'add_like',
             'postid': msg_id,
             'securitytoken': self.security_token
         })
-        r = self.sess.get(
+        r = self.session.get(
             'https://www.fxp.co.il/showthread.php?p=%s#post%s' % (msg_id, msg_id))
 
         id_ = '%s_removelike' % msg_id
         return BeautifulSoup(r.text, "html.parser").find(id=id_) is None
 
     def create_private_chat(self, to, title, message):
-        r = self.sess.post('https://www.fxp.co.il/private_chat.php', data={
+        r = self.session.post('https://www.fxp.co.il/private_chat.php', data={
             'securitytoken': self.security_token,
             'do': 'insertpm',
             'recipients': to,
@@ -253,7 +219,7 @@ class Fxp(object):
             return False
 
     def send_private_chat(self, to, private_message_id, message):
-        r = self.sess.post('https://www.fxp.co.il/private_chat.php', data={
+        r = self.session.post('https://www.fxp.co.il/private_chat.php', data={
             "message": str(message),
             "fromquickreply": "1",
             "securitytoken": self.security_token,
@@ -310,13 +276,27 @@ class Fxp(object):
             image_url = r.json()['image_link']
             print(image_url)
 
-            r = self.sess.post('https://www.fxp.co.il/private_chat.php', data={
+            r = self.session.post('https://www.fxp.co.il/private_chat.php', data={
                 'do': 'update_profile_pic',
                 'profile_url': image_url,
                 'user_id': self.user_id,
                 'securitytoken': self.security_token
             })
             return r.text == 'ok'
+
+    # [Middleware] Is user logged in?
+    def __getattribute__(self, attr):
+        import types
+        method = object.__getattribute__(self, attr)
+        if type(method) == types.MethodType:
+            # See me - Allow login function
+            if not self.logged_in and attr != 'login':
+                print('[*] Please login to use "%s" function' % attr)
+                return lambda *args: None
+            else:
+                return method
+        else:
+            return method
 
     '''
     def ForumThreadsList(self, forum, page=0):
