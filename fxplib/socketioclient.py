@@ -271,7 +271,6 @@ class SocketIOCli(object):
 
     def on_message(self, ws, message):
         p = self.socket_io_message(message)
-        # print (message + '\n') ֳ#Amit Avr
         logging.debug('receive packet: %s', p)
 
     def on_error(self, ws, error):

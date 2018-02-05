@@ -1,13 +1,15 @@
 import requests
 
-from urllib.parse import urlparse
-
 
 def url_alive(url):
+    """
+    Check if url is alive or not
+    :type url: str
+    :rtype: bool
+    """
     try:
-        result = urlparse(url)
-        if all([result.scheme, result.netloc]):
-            return requests.head(url).status_code == 200
-        return False
-    except:
+        result = requests.get(url)
+        result.raise_for_status()
+        return result.status_code == 200
+    except requests.HTTPError:
         return False
