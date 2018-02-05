@@ -1,3 +1,11 @@
+"""
+Description     : This module contains helper functions.
+Author          : Ori Levi
+File Name       : helpers.py
+Date            : 05.02.2018
+Version         : 0.1
+"""
+
 import requests
 
 
